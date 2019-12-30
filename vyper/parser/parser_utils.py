@@ -64,7 +64,7 @@ def get_number_as_fraction(expr, context):
 
     if exponent < -10:
         raise InvalidLiteralException(
-                "`decimal` literal cannot have more than 10 decimal places: {literal}",
+                f"`decimal` literal cannot have more than 10 decimal places: {literal}",
                 expr
             )
 
@@ -117,7 +117,7 @@ def make_byte_array_copier(destination, source, pos=None):
         o = LLLnode.from_list([
             'with', '_source', source, [
                 'with', '_sz', ['add', 32, ['mload', '_source']], [
-                    'assert', ['call', ['add', 18, ['div', '_sz', 10]], 4, 0, '_source', '_sz', destination, '_sz']]]],  # noqa: E501
+                    'assert', ['call', ['gas'], 4, 0, '_source', '_sz', destination, '_sz']]]],  # noqa: E501
             typ=None, add_gas_estimate=gas_calculation, annotation='Memory copy'
         )
         return o
@@ -165,7 +165,7 @@ def make_byte_slice_copier(destination, source, length, max_length, pos=None):
             'with', '_l', max_length,
             [
                 'pop',
-                ['call', 18 + max_length // 10, 4, 0, source, '_l', destination, '_l']
+                ['call', ['gas'], 4, 0, source, '_l', destination, '_l']
             ]
         ], typ=None, annotation=f'copy byte slice dest: {str(destination)}')
     # Copy over data
@@ -261,6 +261,19 @@ def getpos(node):
         getattr(node, 'end_lineno', None),
         getattr(node, 'end_col_offset', None)
     )
+
+
+def set_offsets(node, pos):
+    # TODO replace this with a visitor pattern
+    for field in node.get_slots():
+        item = getattr(node, field, None)
+        if isinstance(item, ast.VyperNode):
+            set_offsets(item, pos)
+        elif isinstance(item, list):
+            for i in item:
+                if isinstance(i, ast.VyperNode):
+                    set_offsets(i, pos)
+    node.lineno, node.col_offset, node.end_lineno, node.end_col_offset = pos
 
 
 # Take a value representing a memory or storage location, and descend down to
@@ -377,17 +390,20 @@ def add_variable_offset(parent, key, pos, array_bounds_check=True):
         if location == 'storage':
             return LLLnode.from_list(['add', ['sha3_32', parent], sub],
                                      typ=subtype,
-                                     location='storage')
+                                     location='storage',
+                                     pos=pos)
         elif location == 'storage_prehashed':
             return LLLnode.from_list(['add', parent, sub],
                                      typ=subtype,
-                                     location='storage')
+                                     location='storage',
+                                     pos=pos)
         elif location in ('calldata', 'memory'):
             offset = 32 * get_size_of_type(subtype)
             return LLLnode.from_list(
                 ['add', ['mul', offset, sub], parent],
                 typ=subtype,
                 location=location,
+                pos=pos
             )
         else:
             raise TypeMismatchException("Not expecting an array access ", pos)

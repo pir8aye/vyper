@@ -449,7 +449,7 @@ def ecrecover(expr, args, kwargs, context):
         ['mstore', ['add', placeholder_node, 32], args[1]],
         ['mstore', ['add', placeholder_node, 64], args[2]],
         ['mstore', ['add', placeholder_node, 96], args[3]],
-        ['pop', ['call', 3000, 1, 0, placeholder_node, 128, MemoryPositions.FREE_VAR_SPACE, 32]],
+        ['pop', ['call', ['gas'], 1, 0, placeholder_node, 128, MemoryPositions.FREE_VAR_SPACE, 32]],
         ['mload', MemoryPositions.FREE_VAR_SPACE],
     ], typ=BaseType('address'), pos=getpos(expr))
 
@@ -470,7 +470,7 @@ def ecadd(expr, args, kwargs, context):
         ['mstore', ['add', placeholder_node, 32], avo(args[0], 1, pos)],
         ['mstore', ['add', placeholder_node, 64], avo(args[1], 0, pos)],
         ['mstore', ['add', placeholder_node, 96], avo(args[1], 1, pos)],
-        ['assert', ['call', 500, 6, 0, placeholder_node, 128, placeholder_node, 64]],
+        ['assert', ['call', ['gas'], 6, 0, placeholder_node, 128, placeholder_node, 64]],
         placeholder_node,
     ], typ=ListType(BaseType('uint256'), 2), pos=getpos(expr), location='memory')
     return o
@@ -487,7 +487,7 @@ def ecmul(expr, args, kwargs, context):
         ['mstore', placeholder_node, avo(args[0], 0, pos)],
         ['mstore', ['add', placeholder_node, 32], avo(args[0], 1, pos)],
         ['mstore', ['add', placeholder_node, 64], args[1]],
-        ['assert', ['call', 40000, 7, 0, placeholder_node, 96, placeholder_node, 64]],
+        ['assert', ['call', ['gas'], 7, 0, placeholder_node, 96, placeholder_node, 64]],
         placeholder_node,
     ], typ=ListType(BaseType('uint256'), 2), pos=pos, location='memory')
     return o
@@ -1036,7 +1036,6 @@ def uint256_addmod(expr, args, kwargs, context):
         [
             'seq',
             ['assert', args[2]],
-            ['assert', ['or', ['iszero', args[1]], ['gt', ['add', args[0], args[1]], args[0]]]],
             ['addmod', args[0], args[1], args[2]],
         ],
         typ=BaseType('uint256'),
@@ -1050,11 +1049,6 @@ def uint256_mulmod(expr, args, kwargs, context):
         [
             'seq',
             ['assert', args[2]],
-            ['assert', [
-                'or',
-                ['iszero', args[0]],
-                ['eq', ['div', ['mul', args[0], args[1]], args[0]], args[1]],
-            ]],
             ['mulmod', args[0], args[1], args[2]],
         ],
         typ=BaseType('uint256'),
@@ -1162,15 +1156,15 @@ def create_forwarder_to(expr, args, kwargs, context):
 
 @signature(('int128', 'decimal', 'uint256'), ('int128', 'decimal', 'uint256'))
 def _min(expr, args, kwargs, context):
-    return minmax(expr, args, kwargs, context, True)
+    return minmax(expr, args, kwargs, context, 'gt')
 
 
 @signature(('int128', 'decimal', 'uint256'), ('int128', 'decimal', 'uint256'))
 def _max(expr, args, kwargs, context):
-    return minmax(expr, args, kwargs, context, False)
+    return minmax(expr, args, kwargs, context, 'lt')
 
 
-def minmax(expr, args, kwargs, context, is_min):
+def minmax(expr, args, kwargs, context, comparator):
     def _can_compare_with_uint256(operand):
         if operand.typ.typ == 'uint256':
             return True
@@ -1181,11 +1175,10 @@ def minmax(expr, args, kwargs, context, is_min):
     left, right = args[0], args[1]
     if not are_units_compatible(left.typ, right.typ) and not are_units_compatible(right.typ, left.typ):  # noqa: E501
         raise TypeMismatchException("Units must be compatible", expr)
-    if left.typ.typ == 'uint256':
-        comparator = 'gt' if is_min else 'lt'
-    else:
-        comparator = 'sgt' if is_min else 'slt'
     if left.typ.typ == right.typ.typ:
+        if left.typ.typ != 'uint256':
+            # if comparing like types that are not uint256, use SLT or SGT
+            comparator = f's{comparator}'
         o = ['if', [comparator, '_l', '_r'], '_r', '_l']
         otyp = left.typ
         otyp.is_literal = False

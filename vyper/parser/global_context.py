@@ -18,6 +18,7 @@ from vyper.parser.constants import (
 )
 from vyper.parser.parser_utils import (
     getpos,
+    set_offsets,
 )
 from vyper.signatures.function_signature import (
     ContractRecord,
@@ -465,6 +466,7 @@ class GlobalContext:
                 for getter in self.mk_getter(item.target.id, typ):
                     self._getters.append(self.parse_line('\n' * (item.lineno - 1) + getter))
                     self._getters[-1].pos = getpos(item)
+                    set_offsets(self._getters[-1], self._getters[-1].pos)
         elif self.get_call_func_name(item) == "public":
             if isinstance(item.annotation.args[0], ast.Name) and item_name in self._contracts:
                 typ = ContractType(item_name)
@@ -486,6 +488,7 @@ class GlobalContext:
             for getter in self.mk_getter(item.target.id, typ):
                 self._getters.append(self.parse_line('\n' * (item.lineno - 1) + getter))
                 self._getters[-1].pos = getpos(item)
+                set_offsets(self._getters[-1], self._getters[-1].pos)
 
         elif isinstance(item.annotation, (ast.Name, ast.Call, ast.Subscript)):
             self._globals[item.target.id] = VariableRecord(

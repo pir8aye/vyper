@@ -204,7 +204,6 @@ class Stmt(object):
                 )
             varname = self.stmt.target.id
             pos = self.context.new_variable(varname, typ)
-            o = LLLnode.from_list('pass', typ=None, pos=pos)
             if self.stmt.value is None:
                 raise StructureException(
                     'New variables must be initialized explicitly',
@@ -655,8 +654,7 @@ class Stmt(object):
                     fetcher = 'mload'
                 else:
                     raise CompilerPanic(
-                        'List iteration only supported on in-memory types',
-                        self.expr
+                        f'List iteration only supported on in-memory types {self.expr}',
                     )
                 body = [
                     'seq',
@@ -989,18 +987,13 @@ class Stmt(object):
                 self.stmt,
             )
         if isinstance(target, ast.Tuple):
-            return Expr(target, self.context).lll_node
+            target = Expr(target, self.context).lll_node
+            for node in target.args:
+                constancy_checks(node, self.context, self.stmt)
+            return target
+
         target = Expr.parse_variable_location(target, self.context)
-        if target.location == 'storage' and self.context.is_constant():
-            raise ConstancyViolationException(
-                f"Cannot modify storage inside {self.context.pp_constancy()}: {target.annotation}",
-                self.stmt,
-            )
-        if not target.mutable:
-            raise ConstancyViolationException(
-                f"Cannot modify function argument: {target.annotation}",
-                self.stmt,
-            )
+        constancy_checks(target, self.context, self.stmt)
         return target
 
     def parse_docblock(self):
@@ -1025,3 +1018,16 @@ def parse_body(code, context):
         o.append(lll)
     o.append('pass')  # force zerovalent, even last statement
     return LLLnode.from_list(o, pos=getpos(code[0]) if code else None)
+
+
+def constancy_checks(node, context, stmt):
+    if node.location == 'storage' and context.is_constant():
+        raise ConstancyViolationException(
+            f"Cannot modify storage inside {context.pp_constancy()}: {node.annotation}",
+            stmt,
+        )
+    if not node.mutable:
+        raise ConstancyViolationException(
+            f"Cannot modify function argument: {node.annotation}",
+            stmt,
+        )
